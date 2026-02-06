@@ -53,8 +53,8 @@ public abstract class PlayerLoginMixin {
         if (isInactive) {
             double hoursSinceLastLogin = activityManager.getHoursSinceLastLogin(playerUuid);
             
-            LogonCheck.LOGGER.warn("Player {} has been inactive for {:.1f} hours (threshold: {} hours) - enforcing punishment",
-                playerName, hoursSinceLastLogin, inactivityHours);
+            LogonCheck.LOGGER.warn("Player {} has been inactive for {} hours (threshold: {} hours) - enforcing punishment",
+                playerName, String.format("%.1f", hoursSinceLastLogin), inactivityHours);
             
             // Kill the player
             player.hurt(player.damageSources().generic(), Float.MAX_VALUE);
@@ -83,8 +83,8 @@ public abstract class PlayerLoginMixin {
             
             double hoursSinceLastLogin = activityManager.getHoursSinceLastLogin(playerUuid);
             if (hoursSinceLastLogin >= 0) {
-                LogonCheck.LOGGER.info("Player {} logged in after {:.1f} hours (threshold: {} hours)",
-                    playerName, hoursSinceLastLogin, inactivityHours);
+                LogonCheck.LOGGER.info("Player {} logged in after {} hours (threshold: {} hours)",
+                    playerName, String.format("%.1f", hoursSinceLastLogin), inactivityHours);
             } else {
                 LogonCheck.LOGGER.info("Player {} logged in for the first time", playerName);
             }
