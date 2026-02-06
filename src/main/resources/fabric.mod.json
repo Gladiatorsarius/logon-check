@@ -3,13 +3,12 @@
 	"id": "logon-check",
 	"version": "${version}",
 	"name": "Logon Check",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "Tracks player login activity and enforces inactivity penalties. Configure with game rules: enableLogonCheck (boolean) and inactivityHours (integer). Players inactive beyond the threshold are killed and banned on next login.",
 	"authors": [
-		"Me!"
+		"SwordSMP Team"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/Gladiatorsarius/Swordsmp-Mods"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/logon-check/icon.png",

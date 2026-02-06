@@ -3,7 +3,8 @@
 	"package": "logon.check.swordsmp.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
-		"ExampleMixin"
+		"PlayerLoginMixin",
+		"PlayerDisconnectMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
