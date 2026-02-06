@@ -3,7 +3,7 @@
 	"id": "logon-check",
 	"version": "${version}",
 	"name": "Logon Check",
-	"description": "Tracks player login activity and enforces inactivity penalties. Configure with game rules: enableLogonCheck (boolean) and inactivityHours (integer). Players inactive beyond the threshold are killed and banned on next login.",
+	"description": "Tracks player login activity and enforces inactivity penalties. Players must stay online for a minimum time (default 30 min) for sessions to count. Configure with game rules: enableLogonCheck (boolean), inactivityHours (integer), and minimumSessionMinutes (integer). Players inactive beyond the threshold are killed and banned on next login.",
 	"authors": [
 		"SwordSMP Team"
 	],

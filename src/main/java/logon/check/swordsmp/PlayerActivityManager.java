@@ -16,13 +16,14 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Manages player login activity data
- * Tracks last login timestamps for all players
+ * Tracks last login timestamps for all players and current session start times
  */
 public class PlayerActivityManager {
     private static final PlayerActivityManager INSTANCE = new PlayerActivityManager();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     
     private final Map<UUID, Long> lastLoginTimes = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> sessionStartTimes = new ConcurrentHashMap<>();
     private File dataFile;
     
     private PlayerActivityManager() {}
@@ -44,7 +45,47 @@ public class PlayerActivityManager {
     }
     
     /**
+     * Start tracking a session for a player
+     * Called when player logs in
+     */
+    public void startSession(UUID playerUuid) {
+        long now = Instant.now().toEpochMilli();
+        sessionStartTimes.put(playerUuid, now);
+        LogonCheck.LOGGER.debug("Started session tracking for player {}", playerUuid);
+    }
+    
+    /**
+     * End a session and update last login time if session was long enough
+     * Returns the session duration in minutes, or -1 if no session was being tracked
+     */
+    public double endSession(UUID playerUuid, int minimumSessionMinutes) {
+        Long sessionStart = sessionStartTimes.remove(playerUuid);
+        if (sessionStart == null) {
+            LogonCheck.LOGGER.debug("No session to end for player {}", playerUuid);
+            return -1;
+        }
+        
+        long now = Instant.now().toEpochMilli();
+        long sessionDuration = now - sessionStart;
+        double sessionMinutes = sessionDuration / (60.0 * 1000.0); // milliseconds to minutes
+        
+        // Only update last login time if session was long enough
+        if (sessionMinutes >= minimumSessionMinutes) {
+            lastLoginTimes.put(playerUuid, now);
+            saveData();
+            LogonCheck.LOGGER.info("Session for player {} lasted {:.1f} minutes (minimum: {} min) - counted as activity",
+                playerUuid, sessionMinutes, minimumSessionMinutes);
+        } else {
+            LogonCheck.LOGGER.info("Session for player {} lasted {:.1f} minutes (minimum: {} min) - too short, not counted",
+                playerUuid, sessionMinutes, minimumSessionMinutes);
+        }
+        
+        return sessionMinutes;
+    }
+    
+    /**
      * Update the last login time for a player to now
+     * This is used for direct updates (e.g., when system is disabled)
      */
     public void updateLastLogin(UUID playerUuid) {
         long now = Instant.now().toEpochMilli();

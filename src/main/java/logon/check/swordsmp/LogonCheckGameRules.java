@@ -30,6 +30,18 @@ public class LogonCheckGameRules {
         .buildAndRegister(Identifier.fromNamespaceAndPath("logon-check", "inactivityHours"));
     
     /**
+     * Configures the minimum session time in minutes for a login to count as activity.
+     * Players must stay online for at least this many minutes for the session to reset their inactivity timer.
+     * Sessions shorter than this will not count toward activity.
+     * Default: 30 minutes
+     * Minimum: 1 minute
+     * Maximum: 1440 minutes (24 hours)
+     */
+    public static final GameRule<Integer> MINIMUM_SESSION_MINUTES = GameRuleBuilder.forInteger(30)
+        .category(GameRuleCategory.PLAYER)
+        .buildAndRegister(Identifier.fromNamespaceAndPath("logon-check", "minimumSessionMinutes"));
+    
+    /**
      * Initialize game rules (called during mod initialization)
      */
     public static void initialize() {

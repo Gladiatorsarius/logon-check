@@ -38,8 +38,8 @@ public abstract class PlayerLoginMixin {
         boolean enabled = Boolean.TRUE.equals(serverLevel.getGameRules().get(LogonCheckGameRules.ENABLE_LOGON_CHECK));
         
         if (!enabled) {
-            // System is disabled, just update last login and return
-            PlayerActivityManager.getInstance().updateLastLogin(playerUuid);
+            // System is disabled, just start session tracking (we'll still enforce minimum time)
+            PlayerActivityManager.getInstance().startSession(playerUuid);
             return;
         }
         
@@ -78,8 +78,9 @@ public abstract class PlayerLoginMixin {
             
             LogonCheck.LOGGER.info("Successfully killed and banned player {} for inactivity", playerName);
         } else {
-            // Player is active, update their login time
-            activityManager.updateLastLogin(playerUuid);
+            // Player is active, start tracking their session
+            // Session duration will be checked on disconnect
+            activityManager.startSession(playerUuid);
             
             double hoursSinceLastLogin = activityManager.getHoursSinceLastLogin(playerUuid);
             if (hoursSinceLastLogin >= 0) {

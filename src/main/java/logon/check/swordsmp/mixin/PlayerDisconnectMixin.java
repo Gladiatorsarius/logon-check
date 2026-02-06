@@ -1,8 +1,10 @@
 package logon.check.swordsmp.mixin;
 
 import logon.check.swordsmp.LogonCheck;
+import logon.check.swordsmp.LogonCheckGameRules;
 import logon.check.swordsmp.PlayerActivityManager;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import org.spongepowered.asm.mixin.Mixin;
@@ -24,9 +26,24 @@ public class PlayerDisconnectMixin {
         UUID playerUuid = this.player.getUUID();
         String playerName = this.player.getName().getString();
         
-        // Update last login time when player disconnects
-        PlayerActivityManager.getInstance().updateLastLogin(playerUuid);
+        // Get the server level to access game rules
+        ServerLevel serverLevel = (ServerLevel) player.level();
         
-        LogonCheck.LOGGER.debug("Updated last login time for player {} on disconnect", playerName);
+        // Get configured minimum session time in minutes
+        int minimumSessionMinutes = serverLevel.getGameRules().get(LogonCheckGameRules.MINIMUM_SESSION_MINUTES);
+        
+        // End session and check if it was long enough to count
+        PlayerActivityManager activityManager = PlayerActivityManager.getInstance();
+        double sessionMinutes = activityManager.endSession(playerUuid, minimumSessionMinutes);
+        
+        if (sessionMinutes >= 0) {
+            if (sessionMinutes >= minimumSessionMinutes) {
+                LogonCheck.LOGGER.info("Player {} disconnected after {:.1f} minutes - session counted as activity",
+                    playerName, sessionMinutes);
+            } else {
+                LogonCheck.LOGGER.info("Player {} disconnected after {:.1f} minutes - session too short (minimum: {} min)",
+                    playerName, sessionMinutes, minimumSessionMinutes);
+            }
+        }
     }
 }
