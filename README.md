@@ -39,15 +39,18 @@ When disabled, the mod still tracks session durations but doesn't enforce inacti
 ## How It Works
 
 1. **Session Tracking**: When a player logs in, the mod starts tracking their session time
-2. **Session Validation**: When a player logs out, the mod checks:
-   - Did the player stay online for at least the minimum session time?
-   - If yes: Their last activity timestamp is updated
-   - If no: The session doesn't count, and their inactivity timer continues
-3. **Inactivity Check**: On each login, if the system is enabled, the mod checks:
+2. **Real-Time Validation**: Every 60 seconds, the server checks all active sessions:
+   - Has the player been online for at least the minimum session time?
+   - If yes: Their last activity timestamp is updated immediately (even if they're still online)
+   - If no: The check continues on the next tick cycle
+3. **Session Cleanup**: When a player logs out, the mod cleans up session tracking data
+4. **Inactivity Check**: On each login, if the system is enabled, the mod checks:
    - Has the player been inactive longer than the configured threshold?
    - If yes: The player is immediately killed and banned
    - If no: The player logs in normally and starts a new session
-4. **Data Persistence**: All activity timestamps are saved to `config/logon-check-data.json`
+5. **Data Persistence**: All activity timestamps are saved to `config/logon-check-data.json` as soon as sessions are validated
+
+**Key Benefit**: Activity is recorded as soon as the minimum time is reached, not waiting for disconnect. This means sessions count even if the server crashes or the player's connection drops after reaching the minimum time.
 
 ## Installation
 
@@ -133,13 +136,14 @@ Player activity data is stored in `config/logon-check-data.json`:
 }
 ```
 
-Each entry maps a player's UUID to their last successful activity timestamp (in milliseconds since epoch). Sessions are tracked in memory and only saved to this file if they meet the minimum session time requirement.
+Each entry maps a player's UUID to their last successful activity timestamp (in milliseconds since epoch). Sessions are tracked in memory and validated in real-time every 60 seconds. Once validated, they're immediately saved to this file.
 
 ## Logs
 
 The mod logs all activity to the server console:
 
-- **INFO**: Session durations and whether they counted as activity
+- **INFO**: Real-time session validation when minimum time is reached
+- **INFO**: Session durations and status on disconnect
 - **INFO**: Login events with time since last activity
 - **WARN**: When a player is detected as inactive and penalties are applied
 - **DEBUG**: Session start tracking events
@@ -147,7 +151,8 @@ The mod logs all activity to the server console:
 **Example log messages:**
 ```
 [INFO] Player Steve logged in after 156.2 hours (threshold: 168 hours)
-[INFO] Player Alex disconnected after 45.3 minutes - session counted as activity
+[INFO] Session for player <uuid> reached 30.1 minutes (minimum: 30 min) - counted as activity
+[INFO] Player Alex disconnected after 45.3 minutes - session duration met requirement
 [INFO] Player Bob disconnected after 12.7 minutes - session too short (minimum: 30 min)
 [WARN] Player Charlie has been inactive for 185.4 hours (threshold: 168 hours) - enforcing punishment
 ```
@@ -172,21 +177,25 @@ The compiled JAR will be in `build/libs/logon-check-1.0.0.jar`
 ### Architecture
 - **LogonCheck**: Main mod initialization and server lifecycle management
 - **LogonCheckGameRules**: Defines and registers custom game rules (boolean and integer)
-- **PlayerActivityManager**: Manages player activity data, session tracking, and persistence
+- **PlayerActivityManager**: Manages player activity data, session tracking, and real-time validation
 - **PlayerLoginMixin**: Intercepts player login events to check inactivity and start session tracking
-- **PlayerDisconnectMixin**: Ends sessions and validates minimum session time before updating activity
+- **PlayerDisconnectMixin**: Cleans up session tracking data on disconnect
+- **ServerTickMixin**: Periodically checks active sessions every 60 seconds for real-time validation
 
 ### Session Tracking
 - Session start times are tracked in memory when players log in
-- On disconnect, session duration is calculated and compared to minimum threshold
-- Only sessions meeting the minimum duration update the persistent activity timestamp
-- Session tracking is separate from persistent data to allow real-time validation
+- Every 60 seconds (1200 ticks), the server checks all active sessions
+- When a session reaches the minimum duration, activity timestamp is immediately updated
+- Sessions are marked as "counted" to prevent double-counting
+- On disconnect, session tracking data is cleaned up
+- Real-time validation ensures activity is recorded even if server crashes after minimum time
 
 ### Data Format
 - Activity timestamps are stored as milliseconds since Unix epoch (January 1, 1970)
 - Data is serialized to JSON using Gson
-- Thread-safe ConcurrentHashMap used for both activity timestamps and session tracking
-- Session data is ephemeral (memory-only) while activity data is persistent
+- Thread-safe ConcurrentHashMap used for activity timestamps, session tracking, and session counting flags
+- Session data (start times and counted flags) is ephemeral (memory-only)
+- Activity timestamps are persistent and immediately saved when sessions are validated
 
 ### First-Time Players
 New players who have never logged in before are not considered inactive. The system only enforces penalties on returning players who exceed the threshold.

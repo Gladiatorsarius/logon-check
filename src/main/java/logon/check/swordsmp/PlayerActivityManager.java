@@ -24,6 +24,7 @@ public class PlayerActivityManager {
     
     private final Map<UUID, Long> lastLoginTimes = new ConcurrentHashMap<>();
     private final Map<UUID, Long> sessionStartTimes = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> sessionCounted = new ConcurrentHashMap<>(); // Track if session already counted
     private File dataFile;
     
     private PlayerActivityManager() {}
@@ -51,15 +52,51 @@ public class PlayerActivityManager {
     public void startSession(UUID playerUuid) {
         long now = Instant.now().toEpochMilli();
         sessionStartTimes.put(playerUuid, now);
+        sessionCounted.put(playerUuid, false); // Mark as not yet counted
         LogonCheck.LOGGER.debug("Started session tracking for player {}", playerUuid);
     }
     
     /**
-     * End a session and update last login time if session was long enough
+     * Check session duration and update activity if minimum time reached
+     * Returns true if session was counted (either now or previously)
+     */
+    public boolean checkAndCountSession(UUID playerUuid, int minimumSessionMinutes) {
+        Long sessionStart = sessionStartTimes.get(playerUuid);
+        if (sessionStart == null) {
+            return false; // No active session
+        }
+        
+        // Check if already counted
+        Boolean alreadyCounted = sessionCounted.get(playerUuid);
+        if (Boolean.TRUE.equals(alreadyCounted)) {
+            return true; // Already counted, no need to check again
+        }
+        
+        long now = Instant.now().toEpochMilli();
+        long sessionDuration = now - sessionStart;
+        double sessionMinutes = sessionDuration / (60.0 * 1000.0); // milliseconds to minutes
+        
+        // Check if session has reached minimum duration
+        if (sessionMinutes >= minimumSessionMinutes) {
+            lastLoginTimes.put(playerUuid, now);
+            sessionCounted.put(playerUuid, true); // Mark as counted
+            saveData();
+            LogonCheck.LOGGER.info("Session for player {} reached {:.1f} minutes (minimum: {} min) - counted as activity",
+                playerUuid, sessionMinutes, minimumSessionMinutes);
+            return true;
+        }
+        
+        return false; // Not yet reached minimum
+    }
+    
+    /**
+     * End a session and clean up tracking data
      * Returns the session duration in minutes, or -1 if no session was being tracked
      */
-    public double endSession(UUID playerUuid, int minimumSessionMinutes) {
+    public double endSession(UUID playerUuid) {
         Long sessionStart = sessionStartTimes.remove(playerUuid);
+        sessionCounted.remove(playerUuid); // Clean up counted flag
+        
         if (sessionStart == null) {
             LogonCheck.LOGGER.debug("No session to end for player {}", playerUuid);
             return -1;
@@ -68,17 +105,6 @@ public class PlayerActivityManager {
         long now = Instant.now().toEpochMilli();
         long sessionDuration = now - sessionStart;
         double sessionMinutes = sessionDuration / (60.0 * 1000.0); // milliseconds to minutes
-        
-        // Only update last login time if session was long enough
-        if (sessionMinutes >= minimumSessionMinutes) {
-            lastLoginTimes.put(playerUuid, now);
-            saveData();
-            LogonCheck.LOGGER.info("Session for player {} lasted {:.1f} minutes (minimum: {} min) - counted as activity",
-                playerUuid, sessionMinutes, minimumSessionMinutes);
-        } else {
-            LogonCheck.LOGGER.info("Session for player {} lasted {:.1f} minutes (minimum: {} min) - too short, not counted",
-                playerUuid, sessionMinutes, minimumSessionMinutes);
-        }
         
         return sessionMinutes;
     }

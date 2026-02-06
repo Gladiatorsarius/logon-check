@@ -70,9 +70,14 @@ To see current configuration:
 - ✅ **Active Player**: Logs in normally, session tracking starts
 - ❌ **Inactive Player**: Killed immediately and banned with reason
 
+**While a player is online:**
+- 🔄 **Real-Time Check**: Every 60 seconds, the server checks if session has reached minimum time
+- ✅ **Minimum Reached**: Activity timestamp updated immediately (even if still online!)
+- Session counts even if server crashes or connection drops after minimum time is reached
+
 **When a player logs out:**
-- ✅ **Long Session** (≥ minimum time): Activity timestamp updated, counts toward staying active
-- ❌ **Short Session** (< minimum time): Doesn't count, inactivity timer continues
+- Session tracking data is cleaned up
+- Already counted sessions remain in the activity log
 
 The ban message tells them:
 - How long they were inactive
@@ -83,9 +88,11 @@ The ban message tells them:
 
 ⚠️ **First-Time Players**: New players are never penalized (no previous activity to compare)
 
+⚠️ **Real-Time Validation**: Activity is recorded as soon as the minimum session time is reached, not waiting for disconnect. This protects against server crashes or connection issues.
+
 ⚠️ **Session Requirements**: Players must stay online for the minimum session time (default 30 min) for their visit to count as activity. Just logging in briefly won't reset the inactivity timer.
 
-⚠️ **Data Persistence**: Activity times are saved in `config/logon-check-data.json`
+⚠️ **Data Persistence**: Activity times are saved in `config/logon-check-data.json` immediately when sessions are validated
 
 ⚠️ **Testing**: Start with the system disabled and higher hours while testing:
 ```
@@ -101,10 +108,13 @@ The ban message tells them:
 Check your server logs for:
 ```
 [logon-check] Player <name> logged in after X.X hours (threshold: Y hours)
-[logon-check] Player <name> disconnected after X.X minutes - session counted as activity
+[logon-check] Session for player <uuid> reached X.X minutes (minimum: Y min) - counted as activity
+[logon-check] Player <name> disconnected after X.X minutes - session duration met requirement
 [logon-check] Player <name> disconnected after X.X minutes - session too short (minimum: Y min)
 [logon-check] Player <name> has been inactive for X.X hours - enforcing punishment
 ```
+
+The real-time validation message appears when a player's session reaches the minimum time, even if they're still online.
 
 ## Disabling
 

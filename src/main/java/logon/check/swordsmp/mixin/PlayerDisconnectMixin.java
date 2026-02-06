@@ -32,13 +32,13 @@ public class PlayerDisconnectMixin {
         // Get configured minimum session time in minutes
         int minimumSessionMinutes = serverLevel.getGameRules().get(LogonCheckGameRules.MINIMUM_SESSION_MINUTES);
         
-        // End session and check if it was long enough to count
+        // End session and get duration
         PlayerActivityManager activityManager = PlayerActivityManager.getInstance();
-        double sessionMinutes = activityManager.endSession(playerUuid, minimumSessionMinutes);
+        double sessionMinutes = activityManager.endSession(playerUuid);
         
         if (sessionMinutes >= 0) {
             if (sessionMinutes >= minimumSessionMinutes) {
-                LogonCheck.LOGGER.info("Player {} disconnected after {:.1f} minutes - session counted as activity",
+                LogonCheck.LOGGER.info("Player {} disconnected after {:.1f} minutes - session duration met requirement",
                     playerName, sessionMinutes);
             } else {
                 LogonCheck.LOGGER.info("Player {} disconnected after {:.1f} minutes - session too short (minimum: {} min)",
