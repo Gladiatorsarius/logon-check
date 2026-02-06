@@ -16,7 +16,7 @@ public class LogonCheckGameRules {
      */
     public static final GameRule<Boolean> ENABLE_LOGON_CHECK = GameRuleBuilder.forBoolean(false)
         .category(GameRuleCategory.PLAYER)
-        .buildAndRegister(Identifier.fromNamespaceAndPath("logon-check", "enableLogonCheck"));
+        .buildAndRegister(Identifier.fromNamespaceAndPath("logon-check", "enable_logon_check"));
     
     /**
      * Configures the maximum inactivity time in hours before a player is considered inactive.
@@ -27,7 +27,7 @@ public class LogonCheckGameRules {
      */
     public static final GameRule<Integer> INACTIVITY_HOURS = GameRuleBuilder.forInteger(168)
         .category(GameRuleCategory.PLAYER)
-        .buildAndRegister(Identifier.fromNamespaceAndPath("logon-check", "inactivityHours"));
+        .buildAndRegister(Identifier.fromNamespaceAndPath("logon-check", "inactivity_hours"));
     
     /**
      * Configures the minimum session time in minutes for a login to count as activity.
@@ -39,7 +39,7 @@ public class LogonCheckGameRules {
      */
     public static final GameRule<Integer> MINIMUM_SESSION_MINUTES = GameRuleBuilder.forInteger(30)
         .category(GameRuleCategory.PLAYER)
-        .buildAndRegister(Identifier.fromNamespaceAndPath("logon-check", "minimumSessionMinutes"));
+        .buildAndRegister(Identifier.fromNamespaceAndPath("logon-check", "minimum_session_minutes"));
     
     /**
      * Initialize game rules (called during mod initialization)

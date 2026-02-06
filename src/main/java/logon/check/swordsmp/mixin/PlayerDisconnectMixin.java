@@ -3,7 +3,7 @@ package logon.check.swordsmp.mixin;
 import logon.check.swordsmp.LogonCheck;
 import logon.check.swordsmp.LogonCheckGameRules;
 import logon.check.swordsmp.PlayerActivityManager;
-import net.minecraft.network.chat.Component;
+import net.minecraft.network.DisconnectionDetails;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
@@ -22,7 +22,7 @@ public class PlayerDisconnectMixin {
     public ServerPlayer player;
     
     @Inject(method = "onDisconnect", at = @At("HEAD"))
-    private void onPlayerDisconnect(Component reason, CallbackInfo ci) {
+    private void onPlayerDisconnect(DisconnectionDetails details, CallbackInfo ci) {
         UUID playerUuid = this.player.getUUID();
         String playerName = this.player.getName().getString();
         
