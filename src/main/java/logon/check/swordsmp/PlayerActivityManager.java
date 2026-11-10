@@ -6,10 +6,15 @@ import com.google.gson.reflect.TypeToken;
 
 import java.io.File;
 import java.io.FileReader;
-import java.io.FileWriter;
+import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.time.Clock;
+import java.util.Collection;
 import java.io.IOException;
 import java.lang.reflect.Type;
-import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,8 +31,12 @@ public class PlayerActivityManager {
     private final Map<UUID, Long> sessionStartTimes = new ConcurrentHashMap<>();
     private final Map<UUID, Boolean> sessionCounted = new ConcurrentHashMap<>(); // Track if session already counted
     private File dataFile;
+    private final Clock clock;
+    private boolean dirty;
     
-    private PlayerActivityManager() {}
+    private PlayerActivityManager() { this(Clock.systemUTC()); }
+
+    PlayerActivityManager(Clock clock) { this.clock = clock; }
     
     public static PlayerActivityManager getInstance() {
         return INSTANCE;
@@ -41,6 +50,10 @@ public class PlayerActivityManager {
             configDir.mkdirs();
         }
         this.dataFile = new File(configDir, "logon-check-data.json");
+        lastLoginTimes.clear();
+        sessionStartTimes.clear();
+        sessionCounted.clear();
+        dirty = false;
         loadData();
         LogonCheck.LOGGER.info("Initialized player activity manager");
     }
@@ -50,7 +63,7 @@ public class PlayerActivityManager {
      * Called when player logs in
      */
     public void startSession(UUID playerUuid) {
-        long now = Instant.now().toEpochMilli();
+        long now = clock.millis();
         sessionStartTimes.put(playerUuid, now);
         sessionCounted.put(playerUuid, false); // Mark as not yet counted
         LogonCheck.LOGGER.debug("Started session tracking for player {}", playerUuid);
@@ -61,18 +74,33 @@ public class PlayerActivityManager {
      * Returns true if session was counted (either now or previously)
      */
     public boolean checkAndCountSession(UUID playerUuid, int minimumSessionMinutes) {
+        boolean counted = updateSession(playerUuid, minimumSessionMinutes);
+        saveData();
+        return counted;
+    }
+
+    public void checkSessions(Collection<UUID> players, int minimumSessionMinutes) {
+        for (UUID player : players) {
+            updateSession(player, minimumSessionMinutes);
+        }
+        saveData();
+    }
+
+    private boolean updateSession(UUID playerUuid, int minimumSessionMinutes) {
         Long sessionStart = sessionStartTimes.get(playerUuid);
         if (sessionStart == null) {
             return false; // No active session
         }
         
-        // Check if already counted
+        // Qualified sessions keep their activity current while online.
         Boolean alreadyCounted = sessionCounted.get(playerUuid);
         if (Boolean.TRUE.equals(alreadyCounted)) {
-            return true; // Already counted, no need to check again
+            lastLoginTimes.put(playerUuid, clock.millis());
+            dirty = true;
+            return true;
         }
         
-        long now = Instant.now().toEpochMilli();
+        long now = clock.millis();
         long sessionDuration = now - sessionStart;
         double sessionMinutes = sessionDuration / (60.0 * 1000.0); // milliseconds to minutes
         
@@ -80,9 +108,9 @@ public class PlayerActivityManager {
         if (sessionMinutes >= minimumSessionMinutes) {
             lastLoginTimes.put(playerUuid, now);
             sessionCounted.put(playerUuid, true); // Mark as counted
-            saveData();
-            LogonCheck.LOGGER.info("Session for player {} reached {:.1f} minutes (minimum: {} min) - counted as activity",
-                playerUuid, sessionMinutes, minimumSessionMinutes);
+            dirty = true;
+            LogonCheck.LOGGER.info("Session for player {} reached {} minutes (minimum: {} min) - counted as activity",
+                playerUuid, String.format(java.util.Locale.ROOT, "%.1f", sessionMinutes), minimumSessionMinutes);
             return true;
         }
         
@@ -93,7 +121,8 @@ public class PlayerActivityManager {
      * End a session and clean up tracking data
      * Returns the session duration in minutes, or -1 if no session was being tracked
      */
-    public double endSession(UUID playerUuid) {
+    public double endSession(UUID playerUuid, int minimumSessionMinutes) {
+        checkAndCountSession(playerUuid, minimumSessionMinutes);
         Long sessionStart = sessionStartTimes.remove(playerUuid);
         sessionCounted.remove(playerUuid); // Clean up counted flag
         
@@ -102,7 +131,7 @@ public class PlayerActivityManager {
             return -1;
         }
         
-        long now = Instant.now().toEpochMilli();
+        long now = clock.millis();
         long sessionDuration = now - sessionStart;
         double sessionMinutes = sessionDuration / (60.0 * 1000.0); // milliseconds to minutes
         
@@ -114,8 +143,9 @@ public class PlayerActivityManager {
      * This is used for direct updates (e.g., when system is disabled)
      */
     public void updateLastLogin(UUID playerUuid) {
-        long now = Instant.now().toEpochMilli();
+        long now = clock.millis();
         lastLoginTimes.put(playerUuid, now);
+        dirty = true;
         saveData();
         LogonCheck.LOGGER.debug("Updated last login time for player {}", playerUuid);
     }
@@ -140,7 +170,7 @@ public class PlayerActivityManager {
             return false;
         }
         
-        long now = Instant.now().toEpochMilli();
+        long now = clock.millis();
         long inactivityMillis = (long) inactivityHours * 60 * 60 * 1000; // hours to milliseconds
         long timeSinceLastLogin = now - lastLogin;
         
@@ -157,7 +187,7 @@ public class PlayerActivityManager {
             return -1;
         }
         
-        long now = Instant.now().toEpochMilli();
+        long now = clock.millis();
         long timeSinceLastLogin = now - lastLogin;
         return timeSinceLastLogin / (60.0 * 60.0 * 1000.0); // milliseconds to hours
     }
@@ -196,24 +226,41 @@ public class PlayerActivityManager {
      * Save player activity data to file
      */
     private void saveData() {
-        // Convert UUID keys to strings for JSON serialization
-        Map<String, Long> saveData = new ConcurrentHashMap<>();
-        for (Map.Entry<UUID, Long> entry : lastLoginTimes.entrySet()) {
-            saveData.put(entry.getKey().toString(), entry.getValue());
+        if (!dirty) {
+            return;
         }
-        
-        try (FileWriter writer = new FileWriter(dataFile)) {
-            GSON.toJson(saveData, writer);
+        Path target = dataFile.toPath();
+        Path temporary = null;
+        try {
+            temporary = Files.createTempFile(target.toAbsolutePath().getParent(), "logon-check-", ".tmp");
+            try (Writer writer = Files.newBufferedWriter(temporary)) {
+                GSON.toJson(lastLoginTimes, writer);
+            }
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            dirty = false;
         } catch (IOException e) {
-            LogonCheck.LOGGER.error("Failed to save player activity data", e);
+            LogonCheck.LOGGER.error("Failed to save player activity data; will retry on the next check", e);
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException e) {
+                    LogonCheck.LOGGER.warn("Failed to remove temporary activity file {}", temporary, e);
+                }
+            }
         }
     }
-    
+
     /**
      * Clear data for a specific player (e.g., after ban)
      */
     public void clearPlayerData(UUID playerUuid) {
         lastLoginTimes.remove(playerUuid);
+        dirty = true;
         saveData();
         LogonCheck.LOGGER.info("Cleared activity data for player {}", playerUuid);
     }

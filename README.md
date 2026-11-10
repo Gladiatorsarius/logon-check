@@ -15,24 +15,24 @@ A Fabric mod for Minecraft 1.21.11 that tracks player login activity and enforce
 
 The mod adds three custom game rules that can be configured in-game:
 
-### `enableLogonCheck` (Boolean)
+### `logon-check:enable_logon_check` (Boolean)
 - **Default**: `false` (disabled)
 - **Description**: Enables or disables the logon activity check system
-- **Usage**: `/gamerule enableLogonCheck true|false`
+- **Usage**: `/gamerule logon-check:enable_logon_check true|false`
 
 When disabled, the mod still tracks session durations but doesn't enforce inactivity penalties.
 
-### `inactivityHours` (Integer)
+### `logon-check:inactivity_hours` (Integer)
 - **Default**: `168` hours (7 days)
 - **Range**: 1 - 8760 hours (1 hour to 1 year)
 - **Description**: Maximum time a player can be inactive before being penalized
-- **Usage**: `/gamerule inactivityHours <hours>`
+- **Usage**: `/gamerule logon-check:inactivity_hours <hours>`
 
-### `minimumSessionMinutes` (Integer)
+### `logon-check:minimum_session_minutes` (Integer)
 - **Default**: `30` minutes
 - **Range**: 1 - 1440 minutes (1 minute to 24 hours)
 - **Description**: Minimum time a player must stay online for the session to count as activity
-- **Usage**: `/gamerule minimumSessionMinutes <minutes>`
+- **Usage**: `/gamerule logon-check:minimum_session_minutes <minutes>`
 
 **Important**: Sessions shorter than this threshold will not reset the inactivity timer. This prevents players from just logging in briefly to avoid penalties.
 
@@ -43,7 +43,7 @@ When disabled, the mod still tracks session durations but doesn't enforce inacti
    - Has the player been online for at least the minimum session time?
    - If yes: Their last activity timestamp is updated immediately (even if they're still online)
    - If no: The check continues on the next tick cycle
-3. **Session Cleanup**: When a player logs out, the mod cleans up session tracking data
+3. **Session Cleanup**: On logout, qualified activity is saved before session tracking is removed
 4. **Inactivity Check**: On each login, if the system is enabled, the mod checks:
    - Has the player been inactive longer than the configured threshold?
    - If yes: The player is immediately killed and banned
@@ -56,61 +56,61 @@ When disabled, the mod still tracks session durations but doesn't enforce inacti
 
 1. Ensure you have Fabric Loader 0.18.4+ installed
 2. Ensure you have Fabric API 0.141.3+ for Minecraft 1.21.11
-3. Place `logon-check-1.0.0.jar` in your server's `mods` folder
+3. Place `logon-check-1.0.1.jar` in your server's `mods` folder
 4. Start the server
 
 ## Configuration
 
 ### Enable the System
 ```
-/gamerule enableLogonCheck true
+/gamerule logon-check:enable_logon_check true
 ```
 
 ### Set Inactivity Threshold
 ```
 # 24 hours (1 day)
-/gamerule inactivityHours 24
+/gamerule logon-check:inactivity_hours 24
 
 # 168 hours (7 days) - default
-/gamerule inactivityHours 168
+/gamerule logon-check:inactivity_hours 168
 
 # 720 hours (30 days)
-/gamerule inactivityHours 720
+/gamerule logon-check:inactivity_hours 720
 ```
 
 ### Set Minimum Session Time
 ```
 # 15 minutes
-/gamerule minimumSessionMinutes 15
+/gamerule logon-check:minimum_session_minutes 15
 
 # 30 minutes - default
-/gamerule minimumSessionMinutes 30
+/gamerule logon-check:minimum_session_minutes 30
 
 # 60 minutes (1 hour)
-/gamerule minimumSessionMinutes 60
+/gamerule logon-check:minimum_session_minutes 60
 ```
 
 ## Examples
 
 ### Example 1: Weekly Activity with 30-Minute Minimum
 ```
-/gamerule enableLogonCheck true
-/gamerule inactivityHours 168
-/gamerule minimumSessionMinutes 30
+/gamerule logon-check:enable_logon_check true
+/gamerule logon-check:inactivity_hours 168
+/gamerule logon-check:minimum_session_minutes 30
 ```
 Players must log in at least once every 7 days and stay for at least 30 minutes.
 
 ### Example 2: Monthly Activity with 1-Hour Minimum
 ```
-/gamerule enableLogonCheck true
-/gamerule inactivityHours 720
-/gamerule minimumSessionMinutes 60
+/gamerule logon-check:enable_logon_check true
+/gamerule logon-check:inactivity_hours 720
+/gamerule logon-check:minimum_session_minutes 60
 ```
 Players must log in at least once every 30 days and stay for at least 1 hour.
 
 ### Example 3: Disable the System
 ```
-/gamerule enableLogonCheck false
+/gamerule logon-check:enable_logon_check false
 ```
 The mod continues tracking but doesn't enforce penalties.
 
@@ -170,7 +170,7 @@ The mod logs all activity to the server console:
 ./gradlew build
 ```
 
-The compiled JAR will be in `build/libs/logon-check-1.0.0.jar`
+The compiled JAR will be in `build/libs/logon-check-1.0.1.jar`
 
 ## Technical Details
 
@@ -186,7 +186,7 @@ The compiled JAR will be in `build/libs/logon-check-1.0.0.jar`
 - Session start times are tracked in memory when players log in
 - Every 60 seconds (1200 ticks), the server checks all active sessions
 - When a session reaches the minimum duration, activity timestamp is immediately updated
-- Sessions are marked as "counted" to prevent double-counting
+- Qualified sessions keep their activity timestamp current every 60 seconds, and again on disconnect
 - On disconnect, session tracking data is cleaned up
 - Real-time validation ensures activity is recorded even if server crashes after minimum time
 

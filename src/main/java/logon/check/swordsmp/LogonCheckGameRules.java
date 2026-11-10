@@ -26,6 +26,7 @@ public class LogonCheckGameRules {
      * Maximum: 8760 hours (365 days / 1 year)
      */
     public static final GameRule<Integer> INACTIVITY_HOURS = GameRuleBuilder.forInteger(168)
+        .range(1, 8760)
         .category(GameRuleCategory.PLAYER)
         .buildAndRegister(Identifier.fromNamespaceAndPath("logon-check", "inactivity_hours"));
     
@@ -38,6 +39,7 @@ public class LogonCheckGameRules {
      * Maximum: 1440 minutes (24 hours)
      */
     public static final GameRule<Integer> MINIMUM_SESSION_MINUTES = GameRuleBuilder.forInteger(30)
+        .range(1, 1440)
         .category(GameRuleCategory.PLAYER)
         .buildAndRegister(Identifier.fromNamespaceAndPath("logon-check", "minimum_session_minutes"));
     
