@@ -48,10 +48,14 @@
 - Test threshold-based login enforcement on a disposable test player, including ban/pardon, without risking real player data.
 - Confirm namespaced gamerules and their range boundaries in-game.
 
-## Reported but intentionally not changed: corrupt history
-- Malformed JSON or a null timestamp can still stop startup, as on main.
-- Recovery policy remains undecided: no automatic reset, backup-and-fresh-start, or new startup policy is included in this branch. Repairing/recovering damaged activity history needs an explicit operator decision.
-- Temporary-file replacement reduces the chance of new partial writes; it cannot reconstruct an already damaged file.
+## Corrupt history and scheduled backups (1.0.2)
+- Bug: damaged JSON/null records previously failed without a recovery path or clear operator guidance.
+- Cause: loading trusted incomplete data; there was no scheduled backup or validated fallback.
+- Fix: validate the entire primary file before accepting records. Recover from the newest valid scheduled backup, preserving damaged primary bytes in a unique `logon-check-data.corrupt-*.json` evidence file. If history exists but no valid source can be loaded, stop startup clearly rather than reset it. A truly fresh install with no primary or backups still starts empty.
+- Backups: create a timestamped snapshot every 30 wall-clock minutes while the server ticks, under `config/logon-check-backups/`; first snapshot after 30 minutes. Keep the 10 newest scheduled snapshots, newest-first recovery. Flush pending primary data, write/validate the new backup, then prune older snapshots. A failed save does not trigger pruning. Deletion failures are logged and retried at the next scheduled backup, so filesystem failures may temporarily leave more than 10 files rather than remove recovery files unsafely.
+- Safety: temporary sibling writes and atomic replacement where supported; no automatic empty reset. On filesystems without atomic replacement, the existing replacement fallback is used. Evidence archives are separate from the 10 scheduled snapshots and never automatically deleted. Recovery can roll activity timestamps back to the selected snapshot (normally up to 30 minutes), or farther if newer backups are corrupt; it cannot reconstruct activity since then.
+- Tested: deterministic clock timing and retention after 12 snapshots; primary corruption with newest backup corrupt recovers older valid snapshot; damaged bytes preserved; missing primary recovery; corrupt primary/all backups fail without mutation; null/empty/non-object/invalid UUID/negative/fractional records fail safely; failed primary save retains recovery snapshots. All 12 tests and full build pass.
+- Remaining manual checks: live server startup failure/recovery messages, real-world 30-minute timer under server lag, filesystem power-loss behavior.
 
 ## Compatibility note
 - Integer game rules now enforce their documented ranges (inactivity hours 1-8760, minimum session minutes 1-1440). Servers with previously out-of-range saved values should correct those settings before upgrading; world-load behavior for such existing values has not been tested in-game.

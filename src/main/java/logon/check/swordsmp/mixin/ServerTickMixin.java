@@ -26,6 +26,7 @@ public abstract class ServerTickMixin {
     
     @Inject(method = "tickServer", at = @At("RETURN"))
     private void onServerTick(BooleanSupplier shouldKeepTicking, CallbackInfo ci) {
+        PlayerActivityManager.getInstance().backupIfDue();
         tickCounter++;
         
         // Only check every 60 seconds to avoid performance issues

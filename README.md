@@ -56,7 +56,7 @@ When disabled, the mod still tracks session durations but doesn't enforce inacti
 
 1. Ensure you have Fabric Loader 0.18.4+ installed
 2. Ensure you have Fabric API 0.141.3+ for Minecraft 1.21.11
-3. Place `logon-check-1.0.1.jar` in your server's `mods` folder
+3. Place `logon-check-1.0.2.jar` in your server's `mods` folder
 4. Start the server
 
 ## Configuration
@@ -138,6 +138,13 @@ Player activity data is stored in `config/logon-check-data.json`:
 
 Each entry maps a player's UUID to their last successful activity timestamp (in milliseconds since epoch). Sessions are tracked in memory and validated in real-time every 60 seconds. Once validated, they're immediately saved to this file.
 
+### Automatic backups and recovery
+Every 30 wall-clock minutes while the server is running, the mod saves a timestamped snapshot in `config/logon-check-backups/`. It keeps the 10 newest scheduled backups. The first backup is created after 30 minutes; a stopped server does not run backup jobs. A due backup runs on the next server tick.
+
+On startup, history is validated in full. If the primary file is corrupt or missing, the newest valid backup is restored. A damaged primary file is preserved as `config/logon-check-data.corrupt-*.json` before replacement. If history exists but no valid backup is available, startup stops with a clear error instead of resetting player history. Repair or restore the files before restarting. A new installation with no history still starts normally.
+
+Recovery uses the snapshot's timestamps, so activity after that snapshot cannot be reconstructed. Normally the snapshot is at most 30 minutes old; if newer backups are damaged, recovery may use an older one. Corruption evidence archives are separate from the 10 scheduled backups and are never automatically deleted. File-write/deletion failures are logged; failed pruning may temporarily leave more than 10 snapshots and is retried at the next scheduled backup.
+
 ## Logs
 
 The mod logs all activity to the server console:
@@ -170,7 +177,7 @@ The mod logs all activity to the server console:
 ./gradlew build
 ```
 
-The compiled JAR will be in `build/libs/logon-check-1.0.1.jar`
+The compiled JAR will be in `build/libs/logon-check-1.0.2.jar`
 
 ## Technical Details
 

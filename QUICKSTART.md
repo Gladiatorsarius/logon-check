@@ -2,7 +2,7 @@
 
 ## Installation
 
-1. Download `logon-check-1.0.1.jar` from the releases
+1. Download `logon-check-1.0.2.jar` from the releases
 2. Place it in your server's `mods` folder
 3. Make sure you have Fabric Loader 0.18.4+ and Fabric API 0.141.3+
 4. Start your server
@@ -123,7 +123,7 @@ To turn off enforcement but keep tracking:
 /gamerule logon-check:enable_logon_check false
 ```
 
-To completely remove the mod, stop the server and delete `logon-check-1.0.1.jar` from the mods folder.
+To completely remove the mod, stop the server and delete `logon-check-1.0.2.jar` from the mods folder.
 
 ## Common Use Cases
 
