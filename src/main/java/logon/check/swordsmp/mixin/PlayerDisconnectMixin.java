@@ -34,15 +34,15 @@ public class PlayerDisconnectMixin {
         
         // End session and get duration
         PlayerActivityManager activityManager = PlayerActivityManager.getInstance();
-        double sessionMinutes = activityManager.endSession(playerUuid);
+        double sessionMinutes = activityManager.endSession(playerUuid, minimumSessionMinutes);
         
         if (sessionMinutes >= 0) {
             if (sessionMinutes >= minimumSessionMinutes) {
-                LogonCheck.LOGGER.info("Player {} disconnected after {:.1f} minutes - session duration met requirement",
-                    playerName, sessionMinutes);
+                LogonCheck.LOGGER.info("Player {} disconnected after {} minutes - session duration met requirement",
+                    playerName, String.format(java.util.Locale.ROOT, "%.1f", sessionMinutes));
             } else {
-                LogonCheck.LOGGER.info("Player {} disconnected after {:.1f} minutes - session too short (minimum: {} min)",
-                    playerName, sessionMinutes, minimumSessionMinutes);
+                LogonCheck.LOGGER.info("Player {} disconnected after {} minutes - session too short (minimum: {} min)",
+                    playerName, String.format(java.util.Locale.ROOT, "%.1f", sessionMinutes), minimumSessionMinutes);
             }
         }
     }
