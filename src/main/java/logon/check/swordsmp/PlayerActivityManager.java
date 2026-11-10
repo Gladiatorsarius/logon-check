@@ -2,10 +2,13 @@ package logon.check.swordsmp;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParseException;
+import com.google.gson.Strictness;
 
 import java.io.File;
-import java.io.FileReader;
+import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,9 +16,11 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.time.Clock;
 import java.util.Collection;
+import java.util.List;
+import java.util.Comparator;
 import java.io.IOException;
-import java.lang.reflect.Type;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class PlayerActivityManager {
     private static final PlayerActivityManager INSTANCE = new PlayerActivityManager();
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON = new GsonBuilder().setStrictness(Strictness.STRICT).setPrettyPrinting().create();
     
     private final Map<UUID, Long> lastLoginTimes = new ConcurrentHashMap<>();
     private final Map<UUID, Long> sessionStartTimes = new ConcurrentHashMap<>();
@@ -33,6 +38,9 @@ public class PlayerActivityManager {
     private File dataFile;
     private final Clock clock;
     private boolean dirty;
+    private Path backupDirectory;
+    private long nextBackupAt;
+    private static final long BACKUP_INTERVAL_MILLIS = 30 * 60_000L;
     
     private PlayerActivityManager() { this(Clock.systemUTC()); }
 
@@ -54,7 +62,9 @@ public class PlayerActivityManager {
         sessionStartTimes.clear();
         sessionCounted.clear();
         dirty = false;
+        backupDirectory = configDir.toPath().resolve("logon-check-backups");
         loadData();
+        nextBackupAt = clock.millis() + BACKUP_INTERVAL_MILLIS;
         LogonCheck.LOGGER.info("Initialized player activity manager");
     }
     
@@ -196,62 +206,146 @@ public class PlayerActivityManager {
      * Load player activity data from file
      */
     private void loadData() {
-        if (!dataFile.exists()) {
+        Path primary = dataFile.toPath();
+        List<Path> backups;
+        try {
+            backups = listBackups();
+        } catch (IOException e) {
+            throw new IllegalStateException("Cannot inspect activity backups; startup stopped without resetting history", e);
+        }
+        if (!Files.exists(primary) && backups.isEmpty()) {
             LogonCheck.LOGGER.info("No existing player activity data found, starting fresh");
             return;
         }
-        
-        try (FileReader reader = new FileReader(dataFile)) {
-            Type type = new TypeToken<Map<String, Long>>(){}.getType();
-            Map<String, Long> loadedData = GSON.fromJson(reader, type);
-            
-            if (loadedData != null) {
-                // Convert String UUIDs back to UUID objects
-                for (Map.Entry<String, Long> entry : loadedData.entrySet()) {
-                    try {
-                        UUID uuid = UUID.fromString(entry.getKey());
-                        lastLoginTimes.put(uuid, entry.getValue());
-                    } catch (IllegalArgumentException e) {
-                        LogonCheck.LOGGER.warn("Invalid UUID in data file: {}", entry.getKey());
-                    }
+        try {
+            lastLoginTimes.putAll(readHistory(primary));
+        } catch (IOException | JsonParseException | IllegalArgumentException e) {
+            Map<UUID, Long> restored = null;
+            Path recoverySource = null;
+            for (Path backup : backups) {
+                try {
+                    restored = readHistory(backup);
+                    recoverySource = backup;
+                    break;
+                } catch (IOException | JsonParseException | IllegalArgumentException invalidBackup) {
+                    e.addSuppressed(invalidBackup);
                 }
-                LogonCheck.LOGGER.info("Loaded {} player activity records", lastLoginTimes.size());
             }
-        } catch (IOException e) {
-            LogonCheck.LOGGER.error("Failed to load player activity data", e);
+            if (restored == null) {
+                throw new IllegalStateException("Cannot load activity history " + primary
+                    + " and no valid backup exists in " + backupDirectory
+                    + "; startup stopped without resetting history. Repair or restore these files.", e);
+            }
+            try {
+                if (Files.exists(primary)) {
+                    Path damaged = Files.createTempFile(primary.toAbsolutePath().getParent(),
+                        "logon-check-data.corrupt-", ".json");
+                    Files.copy(primary, damaged, StandardCopyOption.REPLACE_EXISTING);
+                    LogonCheck.LOGGER.error("Damaged activity history preserved at {}", damaged);
+                }
+                writeHistory(primary, restored);
+                lastLoginTimes.putAll(restored);
+                LogonCheck.LOGGER.warn("Recovered player activity history from {}", recoverySource);
+            } catch (IOException recoveryFailure) {
+                throw new IllegalStateException("Cannot preserve/restore activity history; startup stopped without resetting history",
+                    recoveryFailure);
+            }
+        }
+        LogonCheck.LOGGER.info("Loaded {} player activity records", lastLoginTimes.size());
+    }
+
+    private List<Path> listBackups() throws IOException {
+        if (!Files.exists(backupDirectory)) {
+            return List.of();
+        }
+        try (var paths = Files.list(backupDirectory)) {
+            return paths.filter(path -> path.getFileName().toString().matches("activity-[0-9]{19}-[0-9]+\\.json"))
+                .sorted(Comparator.comparing((Path path) -> path.getFileName().toString()).reversed()).toList();
         }
     }
-    
-    /**
-     * Save player activity data to file
-     */
+
+    private Map<UUID, Long> readHistory(Path path) throws IOException {
+        try (Reader reader = Files.newBufferedReader(path)) {
+            JsonObject object = GSON.fromJson(reader, JsonObject.class);
+            if (object == null) {
+                throw new JsonParseException("Activity history must be a JSON object: " + path);
+            }
+            Map<UUID, Long> records = new HashMap<>();
+            for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
+                UUID uuid = UUID.fromString(entry.getKey());
+                if (!uuid.toString().equalsIgnoreCase(entry.getKey()) || !entry.getValue().isJsonPrimitive()
+                    || !entry.getValue().getAsJsonPrimitive().isNumber()) {
+                    throw new JsonParseException("Invalid activity record in " + path);
+                }
+                long timestamp;
+                try {
+                    timestamp = entry.getValue().getAsBigDecimal().longValueExact();
+                } catch (ArithmeticException e) {
+                    throw new JsonParseException("Invalid activity timestamp in " + path, e);
+                }
+                if (timestamp < 0) {
+                    throw new JsonParseException("Negative activity timestamp in " + path);
+                }
+                records.put(uuid, timestamp);
+            }
+            return records;
+        }
+    }
+
+    /** Called on the server thread each tick; does I/O only when the wall-clock interval is due. */
+    public void backupIfDue() {
+        long now = clock.millis();
+        if (now < nextBackupAt) {
+            return;
+        }
+        // Failed writes retry at the next interval, never every tick.
+        nextBackupAt = now + BACKUP_INTERVAL_MILLIS;
+        saveData();
+        if (dirty) {
+            LogonCheck.LOGGER.error("Activity backup skipped because the primary save failed");
+            return;
+        }
+        try {
+            Files.createDirectories(backupDirectory);
+            Path backup = backupDirectory.resolve(String.format(java.util.Locale.ROOT,
+                "activity-%019d-%s.json", now, Long.toUnsignedString(java.util.concurrent.ThreadLocalRandom.current().nextLong())));
+            writeHistory(backup, lastLoginTimes);
+            // Verify the completed file before removing any older recovery option.
+            readHistory(backup);
+            List<Path> backups = listBackups();
+            for (int i = 10; i < backups.size(); i++) {
+                Files.delete(backups.get(i));
+            }
+        } catch (IOException | JsonParseException | IllegalArgumentException e) {
+            LogonCheck.LOGGER.error("Failed to create/prune activity backup; existing recovery files retained where possible", e);
+        }
+    }
+
     private void saveData() {
         if (!dirty) {
             return;
         }
-        Path target = dataFile.toPath();
-        Path temporary = null;
         try {
-            temporary = Files.createTempFile(target.toAbsolutePath().getParent(), "logon-check-", ".tmp");
+            writeHistory(dataFile.toPath(), lastLoginTimes);
+            dirty = false;
+        } catch (IOException e) {
+            LogonCheck.LOGGER.error("Failed to save player activity data; will retry on the next check", e);
+        }
+    }
+
+    private void writeHistory(Path target, Map<UUID, Long> records) throws IOException {
+        Path temporary = Files.createTempFile(target.toAbsolutePath().getParent(), "logon-check-", ".tmp");
+        try {
             try (Writer writer = Files.newBufferedWriter(temporary)) {
-                GSON.toJson(lastLoginTimes, writer);
+                GSON.toJson(records, writer);
             }
             try {
                 Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException e) {
                 Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
             }
-            dirty = false;
-        } catch (IOException e) {
-            LogonCheck.LOGGER.error("Failed to save player activity data; will retry on the next check", e);
         } finally {
-            if (temporary != null) {
-                try {
-                    Files.deleteIfExists(temporary);
-                } catch (IOException e) {
-                    LogonCheck.LOGGER.warn("Failed to remove temporary activity file {}", temporary, e);
-                }
-            }
+            Files.deleteIfExists(temporary);
         }
     }
 
